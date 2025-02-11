@@ -1,36 +1,40 @@
+import os
 import boto3
 import pymysql
 import pandas as pd
 from botocore.exceptions import NoCredentialsError
 
-# AWS S3 Configuration
-s3 = boto3.client('s3')
-bucket_name = "your-s3-bucket"
-file_key = "data.csv"
+# Read AWS credentials from environment variables
+AWS_REGION = os.getenv("AWS_REGION", "us-east-1")
+S3_BUCKET_NAME = os.getenv("S3_BUCKET_NAME")
+S3_FILE_KEY = os.getenv("S3_FILE_KEY")
 
-# AWS RDS Configuration
-rds_host = "your-rds-endpoint"
-rds_user = "your-username"
-rds_password = "your-password"
-rds_database = "your-database"
+RDS_HOST = os.getenv("RDS_HOST")
+RDS_USER = os.getenv("RDS_USER")
+RDS_PASSWORD = os.getenv("RDS_PASSWORD")
+RDS_DATABASE = os.getenv("RDS_DATABASE")
 
-# AWS Glue Configuration
-glue_client = boto3.client('glue')
-glue_database = "your-glue-database"
-glue_table = "your-glue-table"
+GLUE_DATABASE = os.getenv("GLUE_DATABASE")
+GLUE_TABLE = os.getenv("GLUE_TABLE")
+
+# AWS Clients
+s3 = boto3.client('s3', region_name=AWS_REGION)
+glue_client = boto3.client('glue', region_name=AWS_REGION)
 
 def read_from_s3():
     try:
-        obj = s3.get_object(Bucket=bucket_name, Key=file_key)
+        obj = s3.get_object(Bucket=S3_BUCKET_NAME, Key=S3_FILE_KEY)
         df = pd.read_csv(obj['Body'])
         return df
     except NoCredentialsError:
-        print("Credentials not available")
+        print("AWS Credentials not found. Use IAM roles or environment variables.")
         return None
 
 def push_to_rds(df):
     try:
-        connection = pymysql.connect(host=rds_host, user=rds_user, password=rds_password, database=rds_database)
+        connection = pymysql.connect(
+            host=RDS_HOST, user=RDS_USER, password=RDS_PASSWORD, database=RDS_DATABASE
+        )
         cursor = connection.cursor()
         for _, row in df.iterrows():
             cursor.execute("INSERT INTO your_table (col1, col2) VALUES (%s, %s)", (row['col1'], row['col2']))
@@ -43,13 +47,13 @@ def push_to_rds(df):
     return True
 
 def push_to_glue(df):
-    response = glue_client.create_table(
-        DatabaseName=glue_database,
+    glue_client.create_table(
+        DatabaseName=GLUE_DATABASE,
         TableInput={
-            'Name': glue_table,
+            'Name': GLUE_TABLE,
             'StorageDescriptor': {
                 'Columns': [{'Name': 'col1', 'Type': 'string'}, {'Name': 'col2', 'Type': 'string'}],
-                'Location': f"s3://{bucket_name}/glue_output/",
+                'Location': f"s3://cicd-proj/glue_output/",
                 'InputFormat': 'org.apache.hadoop.mapred.TextInputFormat',
                 'OutputFormat': 'org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat',
                 'SerdeInfo': {'SerializationLibrary': 'org.apache.hadoop.hive.serde2.lazy.LazySimpleSerDe'}
